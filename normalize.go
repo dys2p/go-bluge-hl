@@ -19,7 +19,7 @@ func Normalize(s string) string {
 	return s
 }
 
-// for input text, so text highlighting keeps working
+// for indexed text, so text highlighting keeps working
 var normalizeAnalyzer = func() *analysis.Analyzer {
 	var a = analyzer.NewStandardAnalyzer()
 	a.TokenFilters = append(a.TokenFilters, normalizeTokenFilter{})
