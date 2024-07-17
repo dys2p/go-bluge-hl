@@ -106,9 +106,13 @@ func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]Result[T], error) {
 
 func (pool *Pool[T]) Fuzzy(input string, max int) ([]Result[T], error) {
 	input = Normalize(input) // because PrefixQuery etc don't use the DefaultSearchAnalyzer
+	words := strings.Fields(input)
+	if len(words) > 5 {
+		words = words[:5]
+	}
 
 	query := bluge.NewBooleanQuery()
-	for _, word := range strings.Fields(input) {
+	for _, word := range words {
 		wordQuery := bluge.NewBooleanQuery()
 		for name := range pool.fields {
 			fieldQuery := bluge.NewBooleanQuery()
@@ -124,9 +128,13 @@ func (pool *Pool[T]) Fuzzy(input string, max int) ([]Result[T], error) {
 
 func (pool *Pool[T]) Prefix(input string, max int) ([]Result[T], error) {
 	input = Normalize(input) // because PrefixQuery does not use the DefaultSearchAnalyzer
+	words := strings.Fields(input)
+	if len(words) > 5 {
+		words = words[:5]
+	}
 
 	query := bluge.NewBooleanQuery()
-	for _, word := range strings.Fields(input) {
+	for _, word := range words {
 		wordQuery := bluge.NewBooleanQuery()
 		for name := range pool.fields {
 			wordQuery.AddShould(bluge.NewPrefixQuery(word).SetField(name))
