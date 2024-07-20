@@ -30,12 +30,8 @@ func TestFuzzy(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, _ := pool.Fuzzy(test.input, 10)
-		var gotDocuments = make([]document, len(got))
-		for i := range got {
-			gotDocuments[i] = got[i].Document
-		}
-		if !slices.Equal(gotDocuments, test.want) {
+		got, _ := pool.Search(Fuzzy(test.input, 10))
+		if !slices.Equal(got, test.want) {
 			t.Fatalf("got %v, want %v", got, test.want)
 		}
 	}
@@ -60,13 +56,9 @@ func TestPrefix(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, _ := pool.Prefix(test.input, 10)
-		var gotDocuments = make([]document, len(got))
-		for i := range got {
-			gotDocuments[i] = got[i].Document
-		}
-		if !slices.Equal(gotDocuments, test.want) {
-			t.Fatalf("row %d: got %v, want %v", i, gotDocuments, test.want)
+		got, _ := pool.Search(Prefix(test.input, 10))
+		if !slices.Equal(got, test.want) {
+			t.Fatalf("row %d: got %v, want %v", i, got, test.want)
 		}
 	}
 }

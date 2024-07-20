@@ -8,6 +8,7 @@ import (
 
 	"github.com/blugelabs/bluge"
 	"github.com/blugelabs/bluge/search/highlight"
+	"golang.org/x/exp/maps"
 )
 
 // A pool contains the documents and the search index reader.
@@ -18,16 +19,12 @@ type Pool[T any] struct {
 }
 
 type Result[T any] struct {
-	Document   T
-	Highlights map[string]template.HTML
-}
-
-// Highlight returns r.Highlights[field]. It is just a convenient helper for templates.
-func (r Result[T]) Highlight(field string) template.HTML {
-	return r.Highlights[field]
+	Document T                        `json:"document"`
+	HTML     map[string]template.HTML `json:"html"` // both highlighted and non-highlighted fields
 }
 
 func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T], error) {
+	var fieldNames = maps.Keys(fields)
 	var batch = bluge.NewBatch()
 	for i, doc := range documents {
 		id := strconv.Itoa(i) // slice index becomes document ID
@@ -36,6 +33,7 @@ func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T],
 			value := get(doc)
 			blugeDoc.AddField(bluge.NewTextField(name, value).WithAnalyzer(normalizeAnalyzer).SearchTermPositions().StoreValue())
 		}
+		blugeDoc.AddField(bluge.NewCompositeFieldIncluding("_all", fieldNames))
 		batch.Update(blugeDoc.ID(), blugeDoc)
 	}
 
@@ -67,7 +65,33 @@ func (pool *Pool[T]) Close() error {
 	return pool.reader.Close()
 }
 
-func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]Result[T], error) {
+func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]T, error) {
+	iterator, err := pool.reader.Search(context.Background(), request)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []T
+	for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
+		var index int
+		if err := match.VisitStoredFields(func(field string, value []byte) bool {
+			if field == "_id" {
+				if i, err := strconv.Atoi(string(value)); err == nil {
+					index = i
+				}
+			}
+			return true
+		}); err != nil {
+			return nil, err
+		}
+		results = append(results, pool.documents[index])
+	}
+	return results, nil
+}
+
+func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], error) {
+	request = request.IncludeLocations()
+
 	iterator, err := pool.reader.Search(context.Background(), request)
 	if err != nil {
 		return nil, err
@@ -77,16 +101,19 @@ func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]Result[T], error) {
 	var results []Result[T]
 	for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
 		var index int
-		var highlights = make(map[string]template.HTML)
+		var html = make(map[string]template.HTML)
 		if err := match.VisitStoredFields(func(field string, value []byte) bool {
-			if field == "_id" {
+			switch field {
+			case "_id":
 				if i, err := strconv.Atoi(string(value)); err == nil {
 					index = i
 				}
-			} else {
+			case "_all":
+				// no highlighting
+			default:
 				if locations, ok := match.Locations[field]; ok {
 					if fragment := highlighter.BestFragment(locations, value); len(fragment) > 0 {
-						highlights[field] = template.HTML(fragment)
+						html[field] = template.HTML(fragment)
 					}
 				}
 			}
@@ -95,16 +122,21 @@ func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]Result[T], error) {
 			return nil, err
 		}
 
+		// add missing (non-highlighted) fields
+		for name, get := range pool.fields {
+			if _, ok := html[name]; !ok {
+				html[name] = template.HTML(get(pool.documents[index]))
+			}
+		}
 		results = append(results, Result[T]{
-			Document:   pool.documents[index],
-			Highlights: highlights,
+			Document: pool.documents[index],
+			HTML:     html,
 		})
 	}
-
 	return results, nil
 }
 
-func (pool *Pool[T]) Fuzzy(input string, max int) ([]Result[T], error) {
+func Fuzzy(input string, max int) *bluge.TopNSearch {
 	input = Normalize(input) // because PrefixQuery etc don't use the DefaultSearchAnalyzer
 	words := strings.Fields(input)
 	if len(words) > 5 {
@@ -114,20 +146,16 @@ func (pool *Pool[T]) Fuzzy(input string, max int) ([]Result[T], error) {
 	query := bluge.NewBooleanQuery()
 	for _, word := range words {
 		wordQuery := bluge.NewBooleanQuery()
-		for name := range pool.fields {
-			fieldQuery := bluge.NewBooleanQuery()
-			fieldQuery.AddShould(bluge.NewFuzzyQuery(word).SetField(name).SetFuzziness(1))
-			fieldQuery.AddShould(bluge.NewPrefixQuery(word).SetField(name))
-			fieldQuery.AddShould(bluge.NewWildcardQuery("*" + word + "*").SetField(name))
-			wordQuery.AddShould(fieldQuery)
-		}
+		wordQuery.AddShould(bluge.NewFuzzyQuery(word).SetField("_all").SetFuzziness(1))
+		wordQuery.AddShould(bluge.NewPrefixQuery(word).SetField("_all"))
+		wordQuery.AddShould(bluge.NewWildcardQuery("*" + word + "*").SetField("_all"))
 		query.AddMust(wordQuery)
 	}
-	return pool.Search(bluge.NewTopNSearch(max, query))
+	return bluge.NewTopNSearch(max, query)
 }
 
-func (pool *Pool[T]) Prefix(input string, max int) ([]Result[T], error) {
-	input = Normalize(input) // because PrefixQuery does not use the DefaultSearchAnalyzer
+func Prefix(input string, max int) *bluge.TopNSearch {
+	input = Normalize(input) // because PrefixQuery doesn't use the DefaultSearchAnalyzer
 	words := strings.Fields(input)
 	if len(words) > 5 {
 		words = words[:5]
@@ -135,11 +163,7 @@ func (pool *Pool[T]) Prefix(input string, max int) ([]Result[T], error) {
 
 	query := bluge.NewBooleanQuery()
 	for _, word := range words {
-		wordQuery := bluge.NewBooleanQuery()
-		for name := range pool.fields {
-			wordQuery.AddShould(bluge.NewPrefixQuery(word).SetField(name))
-		}
-		query.AddMust(wordQuery)
+		query.AddMust(bluge.NewPrefixQuery(word).SetField("_all"))
 	}
-	return pool.Search(bluge.NewTopNSearch(max, query))
+	return bluge.NewTopNSearch(max, query)
 }

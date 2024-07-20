@@ -4,6 +4,7 @@ go 1.22.5
 
 require (
 	github.com/blugelabs/bluge v0.2.2
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 	golang.org/x/text v0.16.0
 )
 
