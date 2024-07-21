@@ -19,8 +19,8 @@ type Pool[T any] struct {
 }
 
 type Result[T any] struct {
-	Document T                        `json:"document"`
-	HTML     map[string]template.HTML `json:"html"` // both highlighted and non-highlighted fields
+	Document   T                        `json:"document"`
+	Highlights map[string]template.HTML `json:"highlights"` // key: field name, value: full content or fragment
 }
 
 func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T], error) {
@@ -101,7 +101,7 @@ func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], er
 	var results []Result[T]
 	for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
 		var index int
-		var html = make(map[string]template.HTML)
+		var highlights = make(map[string]template.HTML)
 		if err := match.VisitStoredFields(func(field string, value []byte) bool {
 			switch field {
 			case "_id":
@@ -113,7 +113,7 @@ func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], er
 			default:
 				if locations, ok := match.Locations[field]; ok {
 					if fragment := highlighter.BestFragment(locations, value); len(fragment) > 0 {
-						html[field] = template.HTML(fragment)
+						highlights[field] = template.HTML(fragment)
 					}
 				}
 			}
@@ -122,15 +122,9 @@ func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], er
 			return nil, err
 		}
 
-		// add missing (non-highlighted) fields
-		for name, get := range pool.fields {
-			if _, ok := html[name]; !ok {
-				html[name] = template.HTML(get(pool.documents[index]))
-			}
-		}
 		results = append(results, Result[T]{
-			Document: pool.documents[index],
-			HTML:     html,
+			Document:   pool.documents[index],
+			Highlights: highlights,
 		})
 	}
 	return results, nil
