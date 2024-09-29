@@ -14,6 +14,7 @@ func TestFuzzy(t *testing.T) {
 		{"quick"},
 		{"quick brown fox"},
 		{"quäck"},
+		{"special-chars"},
 	}, map[string]func(document) string{
 		"content": func(doc document) string { return doc.content },
 	})
@@ -27,6 +28,7 @@ func TestFuzzy(t *testing.T) {
 		{"fox", []document{{"quick brown fox"}}},
 		{"föx", []document{{"quick brown fox"}}},
 		{"quick fox", []document{{"quick brown fox"}}},
+		{"special-chars", []document{{"special-chars"}}},
 	}
 
 	for _, test := range tests {
@@ -41,6 +43,7 @@ func TestPrefix(t *testing.T) {
 	pool, _ := MakePool[document]([]document{
 		{"foo bar baz"},
 		{"föö bär bäz"}, // with umlauts
+		{"special-chars"},
 	}, map[string]func(document) string{
 		"content": func(doc document) string { return doc.content },
 	})
@@ -53,6 +56,7 @@ func TestPrefix(t *testing.T) {
 		{"föö", []document{{"foo bar baz"}, {"föö bär bäz"}}}, // query with umlauts
 		{"fo ba", []document{{"foo bar baz"}, {"föö bär bäz"}}},
 		{"fö bä", []document{{"foo bar baz"}, {"föö bär bäz"}}}, // query with umlauts
+		{"special-chars", []document{{"special-chars"}}},
 	}
 
 	for i, test := range tests {
