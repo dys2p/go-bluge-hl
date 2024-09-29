@@ -11,13 +11,15 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Normalize is used internally and can be used on input queries which don't have an analyzer, e. g. bluge.PrefixQuery.
+// Normalize removes diacritics, transforms to lower case and replaces all non-alphanumeric bytes with spaces.
+//
+// It is used internally and can be used on input queries which don't have an analyzer (= all except bluge.MatchQuery and bluge.MatchPhraseQuery).
 func Normalize(text []byte) []byte {
 	var transformer = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC) // crashes on parallel use, and also probably stateful, but reusable with Reset
 	text, _, _ = transform.Bytes(transformer, text)
 	text = bytes.ToLower(text)
 
-	// replace non-alphanumeric bytes by space because bluge apparently does not like special characters
+	// replace non-alphanumeric bytes with spaces because bluge apparently does not like special characters
 	for i, b := range text {
 		if 'a' <= b && b <= 'z' {
 			continue
@@ -30,13 +32,6 @@ func Normalize(text []byte) []byte {
 	return text
 }
 
-// for indexed text, so text highlighting keeps working
-var normalizeAnalyzer = func() *analysis.Analyzer {
-	var a = analyzer.NewStandardAnalyzer()
-	a.TokenFilters = append(a.TokenFilters, normalizeTokenFilter{})
-	return a
-}()
-
 // for search queries via DefaultSearchAnalyzer
 type normalizeTokenFilter struct{}
 
@@ -48,3 +43,10 @@ func (normalizeTokenFilter) Filter(input analysis.TokenStream) analysis.TokenStr
 	}
 	return output
 }
+
+// for indexed text, so text highlighting keeps working
+var normalizeAnalyzer = func() *analysis.Analyzer {
+	var a = analyzer.NewStandardAnalyzer()
+	a.TokenFilters = append(a.TokenFilters, normalizeTokenFilter{})
+	return a
+}()

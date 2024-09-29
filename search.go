@@ -131,7 +131,7 @@ func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], er
 }
 
 func Fuzzy(input string, max int) *bluge.TopNSearch {
-	input = string(Normalize([]byte(input))) // because PrefixQuery etc don't use the DefaultSearchAnalyzer
+	input = string(Normalize([]byte(input)))
 	words := strings.Fields(input)
 	if len(words) > 5 {
 		words = words[:5]
@@ -149,7 +149,7 @@ func Fuzzy(input string, max int) *bluge.TopNSearch {
 }
 
 func Prefix(input string, max int) *bluge.TopNSearch {
-	input = string(Normalize([]byte(input))) // because PrefixQuery doesn't use the DefaultSearchAnalyzer
+	input = string(Normalize([]byte(input)))
 	words := strings.Fields(input)
 	if len(words) > 5 {
 		words = words[:5]
