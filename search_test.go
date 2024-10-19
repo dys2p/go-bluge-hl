@@ -9,6 +9,14 @@ type document struct {
 	content string
 }
 
+func getDocuments[T any](results []Result[T]) []T {
+	var documents []T
+	for _, result := range results {
+		documents = append(documents, result.Document)
+	}
+	return documents
+}
+
 func TestFuzzy(t *testing.T) {
 	pool, _ := MakePool[document]([]document{
 		{"quick"},
@@ -33,7 +41,7 @@ func TestFuzzy(t *testing.T) {
 
 	for _, test := range tests {
 		got, _ := pool.Search(Fuzzy(test.input, 10))
-		if !slices.Equal(got, test.want) {
+		if !slices.Equal(getDocuments(got), test.want) {
 			t.Fatalf("got %v, want %v", got, test.want)
 		}
 	}
@@ -61,7 +69,7 @@ func TestPrefix(t *testing.T) {
 
 	for i, test := range tests {
 		got, _ := pool.Search(Prefix(test.input, 10))
-		if !slices.Equal(got, test.want) {
+		if !slices.Equal(getDocuments(got), test.want) {
 			t.Fatalf("row %d: got %v, want %v", i, got, test.want)
 		}
 	}

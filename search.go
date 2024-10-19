@@ -65,33 +65,8 @@ func (pool *Pool[T]) Close() error {
 	return pool.reader.Close()
 }
 
-func (pool *Pool[T]) Search(request bluge.SearchRequest) ([]T, error) {
-	iterator, err := pool.reader.Search(context.Background(), request)
-	if err != nil {
-		return nil, err
-	}
-
-	var results []T
-	for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
-		var index int
-		if err := match.VisitStoredFields(func(field string, value []byte) bool {
-			if field == "_id" {
-				if i, err := strconv.Atoi(string(value)); err == nil {
-					index = i
-				}
-			}
-			return true
-		}); err != nil {
-			return nil, err
-		}
-		results = append(results, pool.documents[index])
-	}
-	return results, nil
-}
-
-func (pool *Pool[T]) SearchHighlight(request *bluge.TopNSearch) ([]Result[T], error) {
+func (pool *Pool[T]) Search(request *bluge.TopNSearch) ([]Result[T], error) {
 	request = request.IncludeLocations()
-
 	iterator, err := pool.reader.Search(context.Background(), request)
 	if err != nil {
 		return nil, err
