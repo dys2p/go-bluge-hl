@@ -1,4 +1,4 @@
-module github.com/dys2p/bluge-hl
+module github.com/dys2p/go-bluge-hl
 
 go 1.22.5
 
