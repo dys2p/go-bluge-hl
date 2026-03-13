@@ -21,7 +21,7 @@ func Fuzzy(input string, max int) *bluge.TopNSearch {
 		wordQuery.AddShould(bluge.NewWildcardQuery("*" + word + "*").SetField("_all"))
 		query.AddMust(wordQuery)
 	}
-	return bluge.NewTopNSearch(max, query)
+	return bluge.NewTopNSearch(max, query).IncludeLocations()
 }
 
 func Prefix(input string, max int) *bluge.TopNSearch {
@@ -35,5 +35,5 @@ func Prefix(input string, max int) *bluge.TopNSearch {
 	for _, word := range words {
 		query.AddMust(bluge.NewPrefixQuery(word).SetField("_all"))
 	}
-	return bluge.NewTopNSearch(max, query)
+	return bluge.NewTopNSearch(max, query).IncludeLocations()
 }

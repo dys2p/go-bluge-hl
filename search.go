@@ -65,7 +65,6 @@ func (pool *Pool[T]) Close() error {
 }
 
 func (pool *Pool[T]) Search(request *bluge.TopNSearch) ([]Result[T], error) {
-	request = request.IncludeLocations()
 	iterator, err := pool.reader.Search(context.Background(), request)
 	if err != nil {
 		return nil, err
