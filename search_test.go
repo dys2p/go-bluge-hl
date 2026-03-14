@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+// for Pool2
+type category struct {
+	name string
+	//documents []document
+}
+
 type document struct {
 	content string
 }
@@ -71,6 +77,45 @@ func TestPrefix(t *testing.T) {
 		got, _ := pool.Search(Prefix(test.input, 10))
 		if !slices.Equal(getDocuments(got), test.want) {
 			t.Fatalf("row %d: got %v, want %v", i, got, test.want)
+		}
+	}
+}
+
+func TestPool2(t *testing.T) {
+	pool, _ := MakePool2[category, document](
+		[]category{
+			{"foo etc"},
+			{"other"},
+		},
+		map[string]func(category) string{
+			"name": func(cat category) string { return cat.name },
+		},
+		[]document{
+			{"foo"},
+			{"bar"},
+			{"baz"},
+		},
+		map[string]func(document) string{
+			"content": func(doc document) string { return doc.content },
+		},
+	)
+
+	tests := []struct {
+		input          string
+		wantCategories []category
+		wantDocuments  []document
+	}{
+		{"foo", []category{{"foo etc"}}, []document{{"foo"}}},
+		{"bar", []category{}, []document{{"bar"}}},
+	}
+
+	for i, test := range tests {
+		gotCategories, gotDocuments, _ := pool.Search(Prefix(test.input, 10))
+		if !slices.Equal(getDocuments(gotCategories), test.wantCategories) {
+			t.Fatalf("row %d: got %v, want %v", i, gotCategories, test.wantCategories)
+		}
+		if !slices.Equal(getDocuments(gotDocuments), test.wantDocuments) {
+			t.Fatalf("row %d: got %v, want %v", i, gotDocuments, test.wantDocuments)
 		}
 	}
 }

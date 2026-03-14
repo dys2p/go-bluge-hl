@@ -3,30 +3,26 @@ package search
 import (
 	"context"
 	"html/template"
+	"iter"
 	"strconv"
+	"strings"
 
 	"github.com/blugelabs/bluge"
+	"github.com/blugelabs/bluge/index"
 	"github.com/blugelabs/bluge/search/highlight"
 	"golang.org/x/exp/maps"
 )
 
-// A pool contains the documents and the search index reader.
-type Pool[T any] struct {
-	documents []T
-	fields    map[string]func(T) string // field name => getter, all given fields are indexed
-	reader    *bluge.Reader
+type result struct {
+	collection string
+	docIndex   int
+	highlights map[string]template.HTML
 }
 
-type Result[T any] struct {
-	Document   T                        `json:"document"`
-	Highlights map[string]template.HTML `json:"highlights"` // key: field name, value: full content or fragment
-}
-
-func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T], error) {
-	var fieldNames = maps.Keys(fields)
-	var batch = bluge.NewBatch()
+func addFields[T any](batch *index.Batch, collection string, documents []T, fields map[string]func(T) string) {
+	fieldNames := maps.Keys(fields)
 	for i, doc := range documents {
-		id := strconv.Itoa(i) // slice index becomes document ID
+		id := collection + "/" + strconv.Itoa(i) // document id = collection id + document index
 		blugeDoc := bluge.NewDocument(id)
 		for name, get := range fields {
 			value := get(doc)
@@ -35,7 +31,9 @@ func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T],
 		blugeDoc.AddField(bluge.NewCompositeFieldIncluding("_all", fieldNames))
 		batch.Update(blugeDoc.ID(), blugeDoc)
 	}
+}
 
+func makeReader(batch *index.Batch) (*bluge.Reader, error) {
 	config := bluge.InMemoryOnlyConfig()
 	config.DefaultSearchAnalyzer.TokenFilters = append(config.DefaultSearchAnalyzer.TokenFilters, normalizeTokenFilter{}) // for search queries, not for index
 
@@ -47,58 +45,39 @@ func MakePool[T any](documents []T, fields map[string]func(T) string) (*Pool[T],
 	if err := index.Batch(batch); err != nil {
 		return nil, err
 	}
-
-	reader, err := index.Reader()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Pool[T]{
-		documents: documents,
-		fields:    fields,
-		reader:    reader,
-	}, nil
+	return index.Reader()
 }
 
-func (pool *Pool[T]) Close() error {
-	return pool.reader.Close()
-}
-
-func (pool *Pool[T]) Search(request *bluge.TopNSearch) ([]Result[T], error) {
-	iterator, err := pool.reader.Search(context.Background(), request)
-	if err != nil {
-		return nil, err
-	}
-
-	highlighter := highlight.NewHTMLHighlighter()
-	var results []Result[T]
-	for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
-		var index int
-		var highlights = make(map[string]template.HTML)
-		if err := match.VisitStoredFields(func(field string, value []byte) bool {
-			switch field {
-			case "_id":
-				if i, err := strconv.Atoi(string(value)); err == nil {
-					index = i
-				}
-			case "_all":
-				// no highlighting
-			default:
-				if locations, ok := match.Locations[field]; ok {
-					if fragment := highlighter.BestFragment(locations, value); len(fragment) > 0 {
-						highlights[field] = template.HTML(fragment)
+func results(reader *bluge.Reader, request bluge.SearchRequest) iter.Seq2[result, error] {
+	return func(yield func(result, error) bool) {
+		iterator, err := reader.Search(context.Background(), request)
+		if err != nil {
+			yield(result{}, err)
+		}
+		highlighter := highlight.NewHTMLHighlighter()
+		for match, err := iterator.Next(); match != nil && err == nil; match, err = iterator.Next() {
+			var res result
+			err := match.VisitStoredFields(func(field string, value []byte) bool {
+				switch field {
+				case "_id":
+					collection, indexStr, _ := strings.Cut(string(value), "/")
+					res.collection = collection
+					res.docIndex, _ = strconv.Atoi(indexStr)
+				case "_all":
+					// no highlighting
+				default:
+					if locations, ok := match.Locations[field]; ok {
+						if fragment := highlighter.BestFragment(locations, value); len(fragment) > 0 {
+							if res.highlights == nil {
+								res.highlights = make(map[string]template.HTML)
+							}
+							res.highlights[field] = template.HTML(fragment)
+						}
 					}
 				}
-			}
-			return true
-		}); err != nil {
-			return nil, err
+				return true
+			})
+			yield(res, err)
 		}
-
-		results = append(results, Result[T]{
-			Document:   pool.documents[index],
-			Highlights: highlights,
-		})
 	}
-	return results, nil
 }

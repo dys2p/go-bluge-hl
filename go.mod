@@ -1,6 +1,6 @@
 module github.com/dys2p/go-bluge-hl
 
-go 1.22.5
+go 1.24
 
 require (
 	github.com/blugelabs/bluge v0.2.2
